@@ -1,0 +1,43 @@
+{
+  "cli": {
+    "version": ">= 16.4.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "development"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:8080/api",
+        "EXPO_PUBLIC_OPENWEATHER_API_KEY": "35e2c8a534c672f02381b51ccc11c161",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "987853857968-8gorgoregm4h6toveodo1nlergfjjkcs.apps.googleusercontent.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "channel": "production",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://localhost:8080/api",
+        "EXPO_PUBLIC_OPENWEATHER_API_KEY": "35e2c8a534c672f02381b51ccc11c161",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "987853857968-8gorgoregm4h6toveodo1nlergfjjkcs.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

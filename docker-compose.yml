@@ -1,0 +1,242 @@
+x-service-env: &service-env
+  JWT_SECRET: ${JWT_SECRET:-kapitour-dev-secret-change-in-production}
+  INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-kapitour-internal-dev-key}
+  AUTH_SERVICE_URL: http://auth:8000
+  CONTENT_SERVICE_URL: http://content:8000
+  ENGAGEMENT_SERVICE_URL: http://engagement:8000
+  COMMERCE_SERVICE_URL: http://commerce:8000
+  KAPIPASS_SERVICE_URL: http://kapipass:8000
+  CORS_ORIGINS: "*"
+  REDIS_URL: redis://redis:6379/0
+  REDIS_ENABLED: "true"
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  JWT_ACCESS_EXPIRE_MINUTES: "30"
+  JWT_REFRESH_EXPIRE_DAYS: "7"
+  ENVIRONMENT: development
+
+x-postgres-env: &postgres-env
+  POSTGRES_USER: kapitour
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kapitour}
+  POSTGRES_DB: kapitour
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kapitour-postgres
+    profiles: ["postgres"]
+    environment:
+      <<: *postgres-env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/database/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kapitour"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: kapitour-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  auth:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.service
+      args:
+        SERVICE: auth
+    container_name: kapitour-auth
+    environment:
+      <<: *service-env
+      DATABASE_URL: ${AUTH_DATABASE_URL:-sqlite:///database/auth.db}
+      USAR_ALEMBIC: ${USAR_ALEMBIC:-false}
+      SERVICE_NAME: auth
+    volumes:
+      - ./database:/app/database
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  content:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.service
+      args:
+        SERVICE: content
+    container_name: kapitour-content
+    environment:
+      <<: *service-env
+      DATABASE_URL: ${CONTENT_DATABASE_URL:-sqlite:///database/content.db}
+      USAR_ALEMBIC: ${USAR_ALEMBIC:-false}
+      SERVICE_NAME: content
+    volumes:
+      - ./database:/app/database
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  engagement:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.service
+      args:
+        SERVICE: engagement
+    container_name: kapitour-engagement
+    environment:
+      <<: *service-env
+      DATABASE_URL: ${ENGAGEMENT_DATABASE_URL:-sqlite:///database/engagement.db}
+      USAR_ALEMBIC: ${USAR_ALEMBIC:-false}
+      SERVICE_NAME: engagement
+    volumes:
+      - ./database:/app/database
+    depends_on:
+      - content
+      - redis
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  commerce:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.service
+      args:
+        SERVICE: commerce
+    container_name: kapitour-commerce
+    environment:
+      <<: *service-env
+      DATABASE_URL: ${COMMERCE_DATABASE_URL:-sqlite:///database/commerce.db}
+      USAR_ALEMBIC: ${USAR_ALEMBIC:-false}
+      SERVICE_NAME: commerce
+    volumes:
+      - ./database:/app/database
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kapipass:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.service
+      args:
+        SERVICE: kapipass
+    container_name: kapitour-kapipass
+    environment:
+      <<: *service-env
+      DATABASE_URL: ${KAPIPASS_DATABASE_URL:-sqlite:///database/kapipass.db}
+      USAR_ALEMBIC: ${USAR_ALEMBIC:-false}
+      SERVICE_NAME: kapipass
+    volumes:
+      - ./database:/app/database
+    depends_on:
+      - auth
+      - content
+      - redis
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.worker
+    container_name: kapitour-worker
+    environment:
+      <<: *service-env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./database:/app/database
+
+  flower:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.worker
+    container_name: kapitour-flower
+    command: celery -A kapitour_shared.queues.celery_app:celery_app flower --port=5555
+    environment:
+      <<: *service-env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - worker
+
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: kapitour-gateway
+    ports:
+      - "8080:80"
+      - "8000:80"
+    volumes:
+      - ./backend/gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - auth
+      - content
+      - engagement
+      - commerce
+      - kapipass
+      - redis
+
+  kapitour-monolith:
+    profiles: ["monolith"]
+    build: .
+    container_name: kapitour-monolith
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./database:/app/database
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:///database/kapitour.db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
+  postgres_data:

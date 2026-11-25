@@ -1,0 +1,27 @@
+node_modules
+.expo/
+__pycache__/
+*.py[cod]
+
+eas.json
+
+# Variáveis de ambiente / segredos
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Bancos SQLite locais dos microserviços (gerados pelo Docker)
+database/auth.db
+database/content.db
+database/engagement.db
+database/commerce.db
+database/kapipass.db
+database/*.backup.db
